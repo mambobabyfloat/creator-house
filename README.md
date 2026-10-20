@@ -1,81 +1,37 @@
-# Mambo Creator Finder · Cloud V3
+# Mambo Creator Finder · One-Click Edition
 
-Private Streamlit web application for Mambobaby's Instagram creator screening.
+A single Streamlit app that reads competitor Tagged posts, deduplicates creators, fetches each author's public profile and latest posts, optionally uses an AI model to help review the content, filters by Mambobaby hard requirements, and produces a categorized Excel.
 
-## What works now
-- Brand workspace with Guard / Float / Rider filters and hard rejects.
-- Password gate, configured via `APP_PASSWORD` in deployment secrets.
-- Optional persistent PostgreSQL storage with upsert, configured via `DATABASE_URL`.
-- Import licensed Tagged-post CSV/XLSX; aggregate authors with source post evidence, distinct tagged-post count.
-- Paste multiple Instagram profile URLs; import candidate CSV/XLSX; edit and verify rows.
-- Optional Meta Business Discovery lookups of eligible professional accounts (using **your own** authorized credentials).
-- Export 3-tab XLSX or CSV; unknown data stays `待复核` instead of being marked qualified.
+## Deploy once
 
-## Not implemented
-- **No general automatic Tagged scraping**: a specific licensed/approved provider and its API contract must be evaluated and implemented.
-- **No bulk Followers / Following enumeration** of arbitrary competitor accounts.
-- **No vision-based automatic age/location inference.** Content review requires a further authorised source and a separately evaluated model.
-- Password gate is for a small internal team, not enterprise SSO; do not store sensitive personal data about children.
+Replace the files in your existing GitHub repository root with this package's files and commit. Your existing Streamlit Cloud deployment linked to that repository should reload.
 
-## Online deployment: Streamlit Community Cloud
-1. Create a **private GitHub repository**. Unzip and upload the contents of `mambo-creator-finder` to repo root, including `app.py`, requirements and `.streamlit/config.toml`. Do **not** upload `.streamlit/secrets.toml` or `.env`.
-2. Open https://share.streamlit.io/ → New app → choose repository, branch and `app.py`.
-3. Open **Advanced settings → Secrets** and paste e.g.:
-   ```toml
-   APP_PASSWORD = "a-long-unique-secret-you-generate"
-   DATABASE_URL = "postgresql://USER:PASSWORD@HOST:5432/postgres?sslmode=require"
-   ```
-4. For the DATABASE_URL, create a Supabase Postgres project and copy the **connection string** from its database settings. For a cloud deployment, use the connection method supported by your hosting IPv4/IPv6 environment (often session pooler); use SSL. Never paste this string into a public chat or commit it to GitHub.
-5. Deploy. Access the provided Streamlit app URL, then enter your APP_PASSWORD. First, use the example/template or CSV upload.
-6. Select `载入云端已保存的候选池` to load prior saves, and click `保存候选池到云端` to persist edits.
+Streamlit Cloud → App settings → Secrets (TOML):
 
-**Without DATABASE_URL** you can still use the app within a session and export, but the cloud service does NOT guarantee durable local files. Cloud secrets must be set before launch or the app intentionally denies entry.
-
-## Local use
-```bash
-python -m pip install -r requirements.txt
-```
-Create `.streamlit/secrets.toml` based on `.streamlit/secrets.toml.example`, with a real APP_PASSWORD and optionally DATABASE_URL. For a local test only, you may set `DATABASE_URL = "sqlite:///local_creator_finder.db"`; DO NOT use SQLite as durable cloud storage.
-```bash
-python -m streamlit run app.py
+```toml
+APP_PASSWORD = "SET_A_PRIVATE_STRONG_PASSWORD"
+SOCIALCRAWL_API_KEY = "SET_YOUR_SOCIALCRAWL_KEY"
+OPENAI_API_KEY = "OPTIONAL_FOR_AI_POST_REVIEW"
 ```
 
-## Tagged integration: design contract
+Do not copy sample credentials literally. Do not put real keys in GitHub, screenshots or chat. An OpenAI API key is different from a ChatGPT subscription and can incur separate API charges. `OPENAI_API_KEY` is optional but without it baby appearance and UGC classifications are not automated; the tool will keep such people in review. Review visual data transmission and any applicable privacy/platform terms before enabling image analysis. Keep previously configured `DATABASE_URL` if you have one, but this edition exports Excel directly and does not require a database. No secrets are written to Excel.
 
-The external licensed provider must supply permitted access to tagged-post author and original post URL, in a documented and contractually allowed manner. Normalized columns:
+## Usage
 
-| Field | Required | Meaning |
-| --- | --- | --- |
-| `author_username` | yes | Public Instagram handle posting content that tagged the brand |
-| `post_url` | yes | Post/reel URL for verification |
-| `caption` | no | Public caption when granted |
-| `timestamp` | no | Posted date |
-| `followers_count` | no | Provider-verified current follower count |
-| `follows_count` | no | Provider-verified current following count |
+1. Enter a competitor's Instagram handle and pick Guard, Float or Rider.
+2. Pick **new Tagged scan** or **reuse the saved JSON**.
+3. Set a hard ceiling on pages and creator counts; acknowledge possible charges.
+4. Press **One click discover, screen and export**.
+5. Export Excel with Qualified / Needs_Review / Rejected sheets.
 
-A CSV containing these columns is already supported. The import will never treat an account as qualified if age, geography, public status, or other screening facts are unknown.
+### Data limitations
 
-### Real automatic API adapter (next milestone, not shipped)
-- Evaluate providers' lawful access, quotas, pricing and terms; confirm the endpoint supports **Tagged author discovery**, not merely the brand's own mentions.
-- Store the provider API token ONLY in server secrets, not the browser/client/database.
-- Implement `fetch_tagged(brand, cursor, max_items)` server-side against the provider's official documented endpoint; implement pagination, backoff, date range, source URL validation and deduplication.
-- Normalize the provider response to the table above and import with `normalize_tagged`.
-- Keep `provider_name`, evidence URL, retrieval time and original ID to trace each account; enforce deletion/refresh per provider terms.
-- For each eligible account, use Business Discovery where permissions allow; only fetch public data when authorized and respect limits.
-- Optional content analysis must be evidence-based, avoid confident age or location conclusions from appearance alone, and require review before outreach.
+- Approximate SocialCrawl costs at the time of development: Tagged 5 credits/page; profile 1 credit/account; recent posts 1 credit/account. See current vendor prices before calling. AI requests can incur separate costs and the estimator does not cap AI billing.
+- The count limit caps how many newly discovered authors are processed, not how many will qualify. No automatic retries. Vendor may still bill on failed calls.
+- The content reviewer looks only at available public posts (up to 10), not the complete private profile or all followers/following lists.
+- `Qualified` requires all hard rules to have sufficient evidence. If source fields are missing, the status remains `Needs_Review`, not invented compliance.
+- User-supplied SocialCrawl JSON is not an API key and can be reused without new Tagged request charges; profile/posts lookups still use credits.
+- AI review is probabilistic. Children's ages require explicit public textual evidence, not inferred from physical appearance. 'US' requires an explicit public location claim.
 
-## Notes
-- Example users in the template are fictional.
-- Confirm your provider license and Meta's latest API permissions before production use.
-- Do not share access tokens or database URLs in chats or GitHub issues.
-
-## V4 — SocialCrawl Tagged 自动发现
-
-1. 已连接 Streamlit Cloud 的用户，将 V4 项目文件覆盖 GitHub 仓库中的旧文件（切勿上传 `.streamlit/secrets.toml`）。`app.py` 必须位于仓库根目录。
-2. 登录网站，可以直接上传 SocialCrawl Explorer 下载的完整 `response.json`，不消耗额度，提取 Tagged 作者和帖子证据。
-3. 要在网站里直接 API 读取，先确保之前公开过的旧密钥已在 SocialCrawl 撤销，并在 Streamlit Cloud → Manage app → Settings → Secrets 追加：`SOCIALCRAWL_API_KEY = "你的新密钥"`，保留已有 `APP_PASSWORD` 与 `DATABASE_URL`（若已配置）。
-4. 每点击一次“读取一页”都会发起一次请求并消耗供应商积分；翻页必须单独按按钮触发。本模块不自动抓取 Followers / Following。
-5. Tagged 作品只含作者用户名和作品资料，不能据此直接判定美国地域、粉丝数、关注数、孩子年龄和 UGC 资质；会标记“待复核”。
-6. 实际数据源的许可范围、使用限制、费用与适用法规请自行根据供应商合同和平台政策核实。
-
-注意：`SOCIALCRAWL_API_KEY` 绝不可放入 GitHub 文件、代码或聊天截图；如意外暴露请及时撤销。
+Run locally: `pip install -r requirements.txt` then `streamlit run app.py`.
+Run tests: `python -m pytest tests -q` (requires pytest).
