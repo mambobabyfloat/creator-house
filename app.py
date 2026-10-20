@@ -6,6 +6,7 @@ from graph_api import discover, to_candidate
 from storage import save as save_cloud, load as load_cloud
 from security import require_login, secret
 from tagged_import import normalize_tagged
+from socialcrawl import parse_response, fetch_page
 
 st.set_page_config(page_title='Mambo Creator Finder',page_icon='🟡',layout='wide')
 st.markdown('''<style>.stApp{background:#F8F7F0;color:#35312d}h1,h2,h3{font-family:Arial,sans-serif}.stButton button[kind="primary"]{background:#F3D54E;color:#24211b;border:none}</style>''',unsafe_allow_html=True)
@@ -63,6 +64,55 @@ with st.expander('📋 从 Instagram 链接批量创建待核查候选人', expa
    st.success(f'已解析 {len(st.session_state["url_candidates"])} 个账号；仅提取用户名，尚未检验主页信息。')
   else:st.warning('没有识别到有效 Instagram 账号链接')
 
+st.subheader('2 · SocialCrawl Tagged 自动发现（新）')
+st.caption('每次点击“读取一页”会触发一次付费额度请求，通常为 5 Credits；不会自动翻页或批量扣费。先用下面的 JSON 文件验证免费结果。')
+api_key=secret('SOCIALCRAWL_API_KEY')
+with st.expander('🔌 SocialCrawl 自动读取或导入原始 JSON',expanded=True):
+ json_file=st.file_uploader('上传 SocialCrawl Download JSON 文件（零 API 消耗）',type=['json'],key='socialcrawl_json')
+ if json_file is not None:
+  try:
+   import json
+   raw=json.load(json_file)
+   candidates,posts,info=parse_response(raw,brand)
+   st.session_state['socialcrawl_candidates']=candidates.to_dict('records')
+   st.session_state['socialcrawl_posts']=posts
+   st.session_state['socialcrawl_cursor']=info['cursor'] if info['has_more'] else None
+   st.success(f'JSON 解析成功：{len(posts)} 条 Tagged 作品，{len(candidates)} 个不同作者，消耗 0 Credits。')
+  except Exception as e: st.error(f'JSON 格式不符合预期：{e}')
+ st.caption('线上自动获取需要在 Streamlit Cloud → Settings → Secrets 添加 SOCIALCRAWL_API_KEY。请勿在聊天或 GitHub 中公开密钥。')
+ if not api_key:st.info('尚未配置 SOCIALCRAWL_API_KEY；仍可使用 JSON 上传功能。')
+ col1,col2=st.columns(2)
+ with col1:
+  if st.button('读取一页 Tagged（消耗约 5 Credits）',disabled=not bool(api_key)):
+   try:
+    raw=fetch_page(brand,api_key)
+    candidates,posts,info=parse_response(raw,brand)
+    st.session_state['socialcrawl_candidates']=candidates.to_dict('records')
+    st.session_state['socialcrawl_posts']=posts
+    st.session_state['socialcrawl_cursor']=info['cursor'] if info['has_more'] else None
+    st.success(f'取得 {len(posts)} 条作品 / {len(candidates)} 位作者。实际消耗：{info["credits_used"]} Credits；余额 {info["credits_remaining"]}。')
+   except Exception as e: st.error(f'读取失败：{e}')
+ with col2:
+  if st.button('读取下一页（再次消耗额度）',disabled=not bool(api_key and st.session_state.get('socialcrawl_cursor'))):
+   try:
+    raw=fetch_page(brand,api_key,st.session_state['socialcrawl_cursor'])
+    candidates,posts,info=parse_response(raw,brand)
+    old=st.session_state.get('socialcrawl_posts',pd.DataFrame())
+    combined=pd.concat([old,posts],ignore_index=True).drop_duplicates(subset=['username','post_url'])
+    st.session_state['socialcrawl_posts']=combined
+    # Rebuild candidates after pagination without losing first evidence URL.
+    grouped=combined.groupby('username',as_index=False).agg(profile_url=('profile_url','first'),brand_source=('brand_source','first'),evidence_url=('post_url','first'),tagged_post_count=('post_url','count'))
+    grouped['discovery_source']='Tagged · SocialCrawl'
+    st.session_state['socialcrawl_candidates']=grouped.to_dict('records')
+    st.session_state['socialcrawl_cursor']=info['cursor'] if info['has_more'] else None
+    st.success(f'目前累计 {len(combined)} 条作品 / {len(grouped)} 位作者。本次消耗 {info["credits_used"]} Credits。')
+   except Exception as e:st.error(f'下一页读取失败：{e}')
+ if 'socialcrawl_posts' in st.session_state:
+  sp=st.session_state['socialcrawl_posts']
+  st.dataframe(sp[['username','post_url','caption','timestamp']].head(100),hide_index=True,use_container_width=True)
+  st.download_button('下载已发现的 Tagged 作者 CSV',pd.DataFrame(st.session_state.get('socialcrawl_candidates',[])).to_csv(index=False).encode('utf-8-sig'),'socialcrawl_discovered_creators.csv','text/csv')
+  st.warning('注意：Tagged 结果不含作者粉丝数、关注数、美国所在地、宝宝年龄以及主页最近 10 条宝宝出镜次数；这些账号全部先标记为待复核。')
+
 st.subheader('2 · Tagged 数据提供商导入')
 st.info('此模块接受你有权使用的数据供应商导出的 Tagged 作品 CSV / XLSX。不是 Instagram 无授权爬虫；没有接入或配置供应商 API 时，不会自动声称找到红人。')
 tagged_file=st.file_uploader('上传已授权的 Tagged 作品导出文件',type=['csv','xlsx'],key='tagged_upload')
@@ -92,6 +142,8 @@ if file is None:
  
  try: df=load_cloud(DATABASE_URL) if use_saved else pd.DataFrame()
  except Exception as e: st.error(f'读取云端数据库失败：{e}');df=pd.DataFrame()
+ if 'socialcrawl_candidates' in st.session_state:
+  df=pd.concat([df,pd.DataFrame(st.session_state['socialcrawl_candidates'])],ignore_index=True)
  if 'tagged_candidates' in st.session_state:
   df=pd.concat([df,pd.DataFrame(st.session_state['tagged_candidates'])],ignore_index=True)
  if 'url_candidates' in st.session_state:
@@ -107,6 +159,8 @@ else:
   df=pd.read_csv(file) if file.name.lower().endswith('.csv') else pd.read_excel(file)
  except Exception as e:
   st.error(f'读取文件失败：{e}');st.stop()
+if 'socialcrawl_candidates' in st.session_state and file is not None:
+ df=pd.concat([df,pd.DataFrame(st.session_state['socialcrawl_candidates'])],ignore_index=True)
 if 'tagged_candidates' in st.session_state and file is not None:
  df=pd.concat([df,pd.DataFrame(st.session_state['tagged_candidates'])],ignore_index=True)
 if 'url_candidates' in st.session_state and file is not None:

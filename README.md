@@ -68,3 +68,14 @@ A CSV containing these columns is already supported. The import will never treat
 - Example users in the template are fictional.
 - Confirm your provider license and Meta's latest API permissions before production use.
 - Do not share access tokens or database URLs in chats or GitHub issues.
+
+## V4 — SocialCrawl Tagged 自动发现
+
+1. 已连接 Streamlit Cloud 的用户，将 V4 项目文件覆盖 GitHub 仓库中的旧文件（切勿上传 `.streamlit/secrets.toml`）。`app.py` 必须位于仓库根目录。
+2. 登录网站，可以直接上传 SocialCrawl Explorer 下载的完整 `response.json`，不消耗额度，提取 Tagged 作者和帖子证据。
+3. 要在网站里直接 API 读取，先确保之前公开过的旧密钥已在 SocialCrawl 撤销，并在 Streamlit Cloud → Manage app → Settings → Secrets 追加：`SOCIALCRAWL_API_KEY = "你的新密钥"`，保留已有 `APP_PASSWORD` 与 `DATABASE_URL`（若已配置）。
+4. 每点击一次“读取一页”都会发起一次请求并消耗供应商积分；翻页必须单独按按钮触发。本模块不自动抓取 Followers / Following。
+5. Tagged 作品只含作者用户名和作品资料，不能据此直接判定美国地域、粉丝数、关注数、孩子年龄和 UGC 资质；会标记“待复核”。
+6. 实际数据源的许可范围、使用限制、费用与适用法规请自行根据供应商合同和平台政策核实。
+
+注意：`SOCIALCRAWL_API_KEY` 绝不可放入 GitHub 文件、代码或聊天截图；如意外暴露请及时撤销。
